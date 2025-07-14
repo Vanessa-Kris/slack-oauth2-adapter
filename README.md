@@ -171,6 +171,41 @@ python3 slack_cli.py send-message -f session.json -m "Hello, Slack!" -r "social"
 - `-r`: Recipient channel or user ID.
 - `-o`: Save the output to `session.json`.
 
+#### **Recipient Formats**
+
+**Direct Messages (DMs):**
+
+- `@username` - Send DM to user by username
+- `@user@example.com` - Send DM to user by email address
+- `@John Doe` - Send DM to user by display name
+- `U1234567890` - Send DM using direct user ID
+
+**Channel Messages:**
+
+- `#channel-name` - Send message to channel by name
+- `channel-name` - Send message to channel by name (without #)
+- `C1234567890` - Send message using direct channel ID
+
+**Examples:**
+
+```bash
+# Send DM to user by username
+python3 slack_cli.py send-message -f session.json -m "Hi there!" -r "@john.smith" -o session.json
+
+# Send DM to user by email
+python3 slack_cli.py send-message -f session.json -m "Hello!" -r "@john@company.com" -o session.json
+
+# Send message to channel
+python3 slack_cli.py send-message -f session.json -m "Team update" -r "#general" -o session.json
+
+# Send message to channel (without #)
+python3 slack_cli.py send-message -f session.json -m "Team update" -r "general" -o session.json
+```
+
+> [!NOTE]
+>
+> When using `@` prefix for direct messages, the adapter automatically resolves usernames, email addresses, and display names to their corresponding user IDs. If the user cannot be found, the adapter will attempt to resolve the value as channel.
+
 ### 4. **Revoke Token**
 
 Use the `revoke` command to revoke the OAuth2 token and invalidate the user's session.
@@ -188,6 +223,4 @@ python3 slack_cli.py revoke -f session.json -o session.json
 
 ## TODO
 
-- Add support for direct message sending to specific users
 - Implement message formatting options (markdown, attachments, etc.)
-- Add support for channel listing and user discovery

@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
         "userinfo_uri": "https://slack.com/api/users.profile.get",
         "send_message_uri": "https://slack.com/api/chat.postMessage",
         "revoke_uri": "https://slack.com/api/auth.revoke",
+        "users_list_uri": "https://slack.com/api/users.list",
     },
     "params": {
         "scope": [
@@ -191,6 +192,64 @@ class SlackOAuth2Adapter(OAuth2ProtocolInterface):
             logger.error("Failed to revoke tokens: %s", e)
             raise
 
+    def _resolve_user_id(self, access_token, username_or_email):
+        """
+        Helper method to resolve user ID from username or email.
+
+        Args:
+            access_token (str): The access token for API calls
+            username_or_email (str): Username or email to resolve (without @ prefix)
+
+        Returns:
+            str: User ID if found, None otherwise
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = requests.get(
+                self.default_config["urls"]["users_list_uri"],
+                headers=headers,
+                timeout=10,
+            )
+
+            if not response.ok:
+                logger.error("Failed to fetch users list: %s", response.text)
+                return None
+
+            response_data = response.json()
+            if not response_data.get("ok"):
+                logger.error("Failed to fetch users list: %s", response_data)
+                return None
+
+            users = response_data.get("members", [])
+
+            for user in users:
+                if user.get("deleted") or user.get("is_bot"):
+                    continue
+
+                if user.get("name") == username_or_email:
+                    return user.get("id")
+
+                profile = user.get("profile", {})
+                if profile.get("real_name") == username_or_email:
+                    return user.get("id")
+
+                if profile.get("email") == username_or_email:
+                    return user.get("id")
+
+                if profile.get("display_name") == username_or_email:
+                    return user.get("id")
+
+            logger.warning("User not found: %s", username_or_email)
+            return None
+
+        except (requests.RequestException, KeyError, ValueError) as e:
+            logger.error("Error resolving user ID for %s: %s", username_or_email, e)
+            return None
+
     def send_message(self, token, message, **kwargs):
         recipient = kwargs.get("recipient")
         if not recipient:
@@ -207,6 +266,24 @@ class SlackOAuth2Adapter(OAuth2ProtocolInterface):
             if not access_token:
                 logger.error("Token refresh did not return an access token.")
                 raise RuntimeError("Missing access token after refresh.")
+
+            if recipient.startswith("@"):
+                username_or_email = recipient[1:]
+                resolved_user_id = self._resolve_user_id(
+                    access_token, username_or_email
+                )
+                if resolved_user_id:
+                    recipient = resolved_user_id
+                    logger.info(
+                        "Resolved @%s to user ID: %s",
+                        username_or_email,
+                        resolved_user_id,
+                    )
+                else:
+                    logger.warning(
+                        "Could not resolve @%s to user ID, using original recipient",
+                        username_or_email,
+                    )
 
             headers = {
                 "Authorization": f"Bearer {access_token}",
