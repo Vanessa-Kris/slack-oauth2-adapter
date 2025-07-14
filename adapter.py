@@ -166,7 +166,71 @@ class SlackOAuth2Adapter(OAuth2ProtocolInterface):
             raise
 
     def revoke_token(self, token, **kwargs):
-        return super().revoke_token(token, **kwargs)
+        self.session.token = token
+        try:
+            refreshed_tokens = self.session.refresh_token(
+                self.default_config["urls"]["token_uri"]
+            )
+            self.session.token = refreshed_tokens
+            response = self.session.revoke_token(
+                self.default_config["urls"]["revoke_uri"],
+                token_type_hint="refresh_token",
+            )
+
+            if not response.ok:
+                raise RuntimeError(response.text)
+
+            response_data = response.json()
+            if not response_data.get("ok"):
+                raise RuntimeError(response_data)
+            response.raise_for_status()
+
+            logger.info("Token revoked successfully.")
+            return True
+        except OAuthError as e:
+            logger.error("Failed to revoke tokens: %s", e)
+            raise
 
     def send_message(self, token, message, **kwargs):
-        return super().send_message(token, message, **kwargs)
+        recipient = kwargs.get("recipient")
+        if not recipient:
+            raise ValueError("Recipient channel or user ID must be provided.")
+
+        self.session.token = token
+
+        try:
+            refreshed_tokens = self.session.refresh_token(
+                self.default_config["urls"]["token_uri"]
+            )
+            access_token = refreshed_tokens.get("access_token")
+
+            if not access_token:
+                logger.error("Token refresh did not return an access token.")
+                raise RuntimeError("Missing access token after refresh.")
+
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = requests.post(
+                self.default_config["urls"]["send_message_uri"],
+                headers=headers,
+                json={"channel": recipient, "text": message},
+                timeout=10,
+            )
+
+            if not response.ok:
+                raise RuntimeError(response.text)
+
+            response_data = response.json()
+            if not response_data.get("ok"):
+                raise RuntimeError(response_data)
+            response.raise_for_status()
+
+            logger.info("Successfully sent message.")
+            return {"success": True, "refreshed_token": refreshed_tokens}
+
+        except OAuthError as e:
+            logger.exception("Failed to send message: %s", e)
+            raise

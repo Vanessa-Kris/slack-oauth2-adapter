@@ -163,13 +163,31 @@ python3 slack_cli.py exchange -c auth_code -o session.json -f session.json
 Use the `send-message` command to send a message using the adapter.
 
 ```bash
-python3 slack_cli.py send-message -f session.json -m "Hello, Slack!" -o session.json
+python3 slack_cli.py send-message -f session.json -m "Hello, Slack!" -r "social" -o session.json
 ```
 
 - `-f`: Read parameters from `session.json`.
 - `-m`: Message to send.
+- `-r`: Recipient channel or user ID.
 - `-o`: Save the output to `session.json`.
+
+### 4. **Revoke Token**
+
+Use the `revoke` command to revoke the OAuth2 token and invalidate the user's session.
+
+```bash
+python3 slack_cli.py revoke -f session.json -o session.json
+```
+
+- `-f`: Read token from `session.json`.
+- `-o`: Update the file by removing the revoked token.
+
+> [!WARNING]
+>
+> After revoking a token, the user will need to re-authenticate to use the adapter again. The revoked token will be removed from the output file if specified.
 
 ## TODO
 
-- Support additional PDS providers beyond just https://bsky.social
+- Add support for direct message sending to specific users
+- Implement message formatting options (markdown, attachments, etc.)
+- Add support for channel listing and user discovery

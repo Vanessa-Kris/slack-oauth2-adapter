@@ -104,11 +104,12 @@ def exchange(code, verifier, redirect, output, input_file):
 @cli.command("send-message")
 @click.option("-f", "--token-file", required=True, help="File containing token JSON.")
 @click.option("-m", "--message", required=True, help="Message to send.")
+@click.option("-r", "--recipient", required=True, help="Recipient channel or user ID.")
 @click.option(
     "-o", "--output", default=None, help="File to save refreshed token if different."
 )
-def send_message(token_file, message, output):
-    """Send a message using the Bluesky OAuth2 Adapter."""
+def send_message(token_file, recipient, message, output):
+    """Send a message using the Slack OAuth2 Adapter."""
     try:
         with open(token_file, "r", encoding="utf-8") as f:
             token = json.load(f).get("token")
@@ -121,7 +122,7 @@ def send_message(token_file, message, output):
 
     adapter = SlackOAuth2Adapter()
     try:
-        result = adapter.send_message(token=token, message=message)
+        result = adapter.send_message(token=token, recipient=recipient, message=message)
         print_table("Send Message Result", result)
 
         refreshed_token = result.get("refreshed_token")
@@ -139,6 +140,44 @@ def send_message(token_file, message, output):
             print(f"Refreshed token saved to {output}")
     except Exception as err:
         print(f"Failed to send message: {err}")
+
+
+@cli.command("revoke")
+@click.option("-f", "--token-file", required=True, help="File containing token JSON.")
+@click.option(
+    "-o", "--output", default=None, help="File to update after token revocation."
+)
+def revoke(token_file, output):
+    """Revoke the OAuth2 token."""
+    try:
+        with open(token_file, "r", encoding="utf-8") as f:
+            token = json.load(f).get("token")
+            if not token:
+                print(f"Token key not found in {token_file}.")
+                return
+    except FileNotFoundError:
+        print(f"Token file {token_file} not found.")
+        return
+
+    adapter = SlackOAuth2Adapter()
+    try:
+        result = adapter.revoke_token(token=token)
+        print_table("Revoke Token Result", {"success": result})
+
+        if output:
+            try:
+                with open(output, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            except FileNotFoundError:
+                existing_data = {}
+
+            existing_data.pop("token", None)
+
+            with open(output, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, indent=2)
+            print(f"Token removed from {output}")
+    except Exception as err:
+        print(f"Failed to revoke token: {err}")
 
 
 if __name__ == "__main__":
