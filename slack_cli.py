@@ -4,8 +4,6 @@ of the GNU General Public License, v. 3.0. If a copy of the GNU General
 Public License was not distributed with this file, see <https://www.gnu.org/licenses/>.
 """
 
-import os
-import base64
 import json
 import click
 from adapter import SlackOAuth2Adapter
@@ -40,15 +38,11 @@ def cli():
 def auth_url(pkce, redirect, state, output):
     """Get the OAuth2 authorization URL."""
     adapter = SlackOAuth2Adapter()
-    # request_identifier = base64.b64encode(os.urandom(32)).decode("utf-8")
-    request_identifier = None
     result = adapter.get_authorization_url(
         autogenerate_code_verifier=pkce,
         redirect_url=redirect,
         state=state,
-        request_identifier=request_identifier,
     )
-    result["request_identifier"] = request_identifier
     print_table("Authorization URL Result", result)
     if output:
         with open(output, "w", encoding="utf-8") as f:

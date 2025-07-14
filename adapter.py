@@ -7,6 +7,7 @@ Public License was not distributed with this file, see <https://www.gnu.org/lice
 import os
 import json
 from typing import Dict, Any
+import requests
 from authlib.integrations.requests_client import OAuth2Session
 from authlib.integrations.base_client import OAuthError
 from authlib.common.security import generate_token
@@ -26,6 +27,9 @@ DEFAULT_CONFIG = {
     "params": {
         "scope": [
             "chat:write",
+            "users.profile:read",
+            "users:read",
+            "users:read.email",
         ]
     },
 }
@@ -101,7 +105,65 @@ class SlackOAuth2Adapter(OAuth2ProtocolInterface):
         }
 
     def exchange_code_and_fetch_user_info(self, code, **kwargs):
-        return super().exchange_code_and_fetch_user_info(code, **kwargs)
+        redirect_url = kwargs.pop("redirect_url", None)
+
+        if redirect_url:
+            self.session.redirect_uri = redirect_url
+
+        try:
+            token_response = self.session.fetch_token(
+                self.default_config["urls"]["token_uri"], code=code, **kwargs
+            )
+            if not token_response.get("ok"):
+                raise ValueError(
+                    "Failed to fetch access token: " + token_response.get("error", "")
+                )
+
+            users_token = token_response["authed_user"]
+            self.session.token = users_token
+            logger.info("Access token fetched successfully.")
+
+            if not users_token.get("refresh_token"):
+                raise ValueError("No refresh token found in the response.")
+
+            fetched_scopes = set(users_token.get("scope", "").split(","))
+            expected_scopes = set(self.default_config["params"]["scope"])
+
+            if not expected_scopes.issubset(fetched_scopes):
+                raise ValueError(
+                    f"Invalid token: Scopes do not match. Expected: {expected_scopes}, "
+                    f"Received: {fetched_scopes}"
+                )
+
+            headers = {
+                "Authorization": f"Bearer {users_token['access_token']}",
+                "Content-Type": "application/json",
+            }
+
+            userinfo_response = requests.get(
+                self.default_config["urls"]["userinfo_uri"], headers=headers, timeout=10
+            ).json()
+            if not userinfo_response.get("ok"):
+                raise ValueError(
+                    "Failed to fetch user info: " + userinfo_response.get("error", "")
+                )
+            users_profile = userinfo_response["profile"]
+            user_label = users_profile.get("email") or users_profile.get("real_name")
+
+            account_identifier = (
+                f"{token_response["team"]["id"]}[{token_response["team"]["name"]}]::"
+                f"{users_token["id"]}[{user_label}]"
+            )
+            userinfo = {
+                "account_identifier": account_identifier,
+                "name": users_profile.get("real_name"),
+            }
+            logger.info("User information fetched successfully.")
+
+            return {"token": users_token, "userinfo": userinfo}
+        except OAuthError as e:
+            logger.error("Failed to fetch token or user info: %s", e)
+            raise
 
     def revoke_token(self, token, **kwargs):
         return super().revoke_token(token, **kwargs)

@@ -59,23 +59,32 @@ sudo apt install build-essential python3-dev
    - Add your redirect URI (e.g., `https://example.com/callback/`)
    - Click **"Save URLs"**
 
-3. **Set up User Token Scopes:**
+3. **Enable Token Rotation:**
+
+   - In the same **"OAuth & Permissions"** page, scroll down to **"Token Rotation"** section
+   - Click **"Opt into Token Rotation"**
+   - This ensures that a refresh token is returned every time a user grants access to your app
+   - Click **"Save Changes"**
+
+4. **Set up User Token Scopes:**
 
    - In the same **"OAuth & Permissions"** page, scroll down to **"Scopes"**
    - Under **"User Token Scopes"**, click **"Add an OAuth Scope"**
    - Add the following required scopes:
-     - `chat:write` - Send messages as the user
-     - `users.profile:read` - View profile information about people in a workspace
+     - `chat:write`
+     - `profile`
+     - `users:read`
+     - `users:read.email`
    - Click **"Save Changes"**
 
-4. **Enable public distribution (optional):**
+5. **Enable public distribution (optional):**
 
    - To allow your app to work with different workspaces, go to **"Manage Distribution"** in the left sidebar
    - Under **"Share Your App with Other Workspaces"**, review the checklist requirements
    - Once all requirements are met, click **"Activate Public Distribution"**
    - This makes your app available for installation in any workspace
 
-5. **Gather your app credentials:**
+6. **Gather your app credentials:**
    - Go to **"Basic Information"** in the left sidebar
    - Under **"App Credentials"**, you'll find:
      - **Client ID** - Copy this value
