@@ -4,44 +4,107 @@ of the GNU General Public License, v. 3.0. If a copy of the GNU General
 Public License was not distributed with this file, see <https://www.gnu.org/licenses/>.
 """
 
+import os
+import json
+from typing import Dict, Any
+from authlib.integrations.requests_client import OAuth2Session
+from authlib.integrations.base_client import OAuthError
+from authlib.common.security import generate_token
 from protocol_interfaces import OAuth2ProtocolInterface
 from logutils import get_logger
 
 logger = get_logger(__name__)
 
-"""
-Developer Guide - Protocol Adapter Template
-
-Purpose:
----------
-This file serves as a template for creating platform-specific protocol adapters 
-that implement a defined communication protocol, such as OAuth2.
-
-Usage:
-------
-To implement a new protocol adapter:
-1. Choose the appropriate protocol interface (e.g., OAuth2ProtocolInterface).
-2. Create a new class following the naming convention: <PlatformName><Protocol>Adapter.
-   Example: GmailOAuth2Adapter
-3. Subclass the selected protocol interface.
-4. Implement all abstract methods defined in the interface.
-5. Add any necessary platform-specific logic or configuration handling.
-
-Notes:
-------
-- The protocol interface provides `.manifest` and `.config` attributes for accessing 
-    adapter metadata and settings.
-
-Example:
---------
-See the sample `GmailOAuth2Adapter` class below.
-"""
+DEFAULT_CONFIG = {
+    "urls": {
+        "auth_uri": "https://slack.com/oauth/v2/authorize",
+        "token_uri": "https://slack.com/api/oauth.v2.access",
+        "userinfo_uri": "https://slack.com/api/users.profile.get",
+        "send_message_uri": "https://slack.com/api/chat.postMessage",
+        "revoke_uri": "https://slack.com/api/auth.revoke",
+    },
+    "params": {
+        "scope": [
+            "chat:write",
+        ]
+    },
+}
 
 
-class GmailOAuth2Adapter(OAuth2ProtocolInterface):
-    """
-    Sample implementation of a Gmail adapter using the OAuth2 protocol.
-    Use this class as a reference for building custom platform adapters.
-    """
+def load_credentials(configs: Dict[str, Any]) -> Dict[str, str]:
+    """Load OAuth2 credentials from a specified configuration."""
 
-    # TODO: Implement required methods defined in OAuth2ProtocolInterface
+    creds_config = configs.get("credentials", {})
+    creds_path = os.path.expanduser(creds_config.get("path", ""))
+    if not creds_path:
+        raise ValueError("Missing 'credentials.path' in configuration.")
+    if not os.path.isabs(creds_path):
+        creds_path = os.path.join(os.path.dirname(__file__), creds_path)
+
+    logger.debug("Loading credentials from %s", creds_path)
+    with open(creds_path, encoding="utf-8") as f:
+        creds = json.load(f)
+
+    return {
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "redirect_uri": creds["redirect_uris"][0],
+    }
+
+
+class SlackOAuth2Adapter(OAuth2ProtocolInterface):
+    """Adapter for integrating Slack's OAuth2 protocol."""
+
+    def __init__(self):
+        self.default_config = DEFAULT_CONFIG
+        self.credentials = load_credentials(self.config)
+        self.session = OAuth2Session(
+            client_id=self.credentials["client_id"],
+            client_secret=self.credentials["client_secret"],
+            redirect_uri=self.credentials["redirect_uri"],
+            token_endpoint=self.default_config["urls"]["token_uri"],
+        )
+
+    def get_authorization_url(self, **kwargs):
+        code_verifier = kwargs.get("code_verifier")
+        autogenerate_code_verifier = kwargs.pop("autogenerate_code_verifier", False)
+        redirect_url = kwargs.pop("redirect_url", None)
+
+        if autogenerate_code_verifier and not code_verifier:
+            code_verifier = generate_token(48)
+            kwargs["code_verifier"] = code_verifier
+            self.session.code_challenge_method = "S256"
+
+        if code_verifier:
+            kwargs["code_verifier"] = code_verifier
+            self.session.code_challenge_method = "S256"
+
+        if redirect_url:
+            self.session.redirect_uri = redirect_url
+
+        params = {**self.default_config["params"], **kwargs}
+
+        authorization_url, state = self.session.create_authorization_url(
+            self.default_config["urls"]["auth_uri"], **params
+        )
+
+        slack_authorization_url = authorization_url.replace("scope=", "user_scope=")
+        logger.debug("Authorization URL generated: %s", slack_authorization_url)
+
+        return {
+            "authorization_url": slack_authorization_url,
+            "state": state,
+            "code_verifier": code_verifier,
+            "client_id": self.credentials["client_id"],
+            "scope": ",".join(self.default_config["params"]["scope"]),
+            "redirect_uri": self.session.redirect_uri,
+        }
+
+    def exchange_code_and_fetch_user_info(self, code, **kwargs):
+        return super().exchange_code_and_fetch_user_info(code, **kwargs)
+
+    def revoke_token(self, token, **kwargs):
+        return super().revoke_token(token, **kwargs)
+
+    def send_message(self, token, message, **kwargs):
+        return super().send_message(token, message, **kwargs)
